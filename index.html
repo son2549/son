@@ -1,0 +1,1099 @@
+<!DOCTYPE html>
+<html lang="zh-TW" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>臺北捷運中央控制中心 | Taipei MRT 3D Command & Control System</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts Inter & Orbitron -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;900&family=Orbitron:wght@400;600;800;900&family=Noto+Sans+TC:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+    <!-- Three.js & OrbitControls -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <!-- GSAP for smooth animations -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        mrt: {
+                            bannan: '#0070BD',
+                            tamsui: '#E3002C',
+                            songshan: '#008659',
+                            wenhu: '#C48C31',
+                            dark: '#030712',
+                            panel: 'rgba(15, 23, 42, 0.75)',
+                            accent: '#06b6d4',
+                            danger: '#ef4444',
+                            warning: '#f59e0b',
+                            success: '#10b981'
+                        }
+                    },
+                    fontFamily: {
+                        sans: ['Noto Sans TC', 'Inter', 'sans-serif'],
+                        mono: ['Orbitron', 'monospace']
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        body {
+            background-color: #030712;
+            color: #f3f4f6;
+            overflow: hidden;
+            user-select: none;
+            cursor: none; /* Custom cursor handling */
+        }
+
+        /* Glassmorphic Panel Styling */
+        .glass-panel {
+            background: rgba(10, 16, 31, 0.65);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6),
+                        inset 0 1px 0 rgba(255, 255, 255, 0.1);
+            transition: border-color 0.3s ease, box-shadow 0.3s ease, transform 0.1s ease-out;
+            transform-style: preserve-3d;
+        }
+
+        .glass-panel:hover {
+            border-color: rgba(6, 182, 212, 0.3);
+            box-shadow: 0 25px 60px rgba(0, 240, 255, 0.15),
+                        inset 0 1px 1px rgba(255, 255, 255, 0.2);
+        }
+
+        /* 3D Cursor Follower */
+        #cursor-dot, #cursor-ring {
+            pointer-events: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            border-radius: 50%;
+            z-index: 9999;
+            transform: translate(-50%, -50%);
+            transition: transform 0.1s ease, width 0.2s ease, height 0.2s ease, background-color 0.2s ease;
+        }
+
+        #cursor-dot {
+            width: 8px;
+            height: 8px;
+            background-color: #06b6d4;
+            box-shadow: 0 0 12px #06b6d4, 0 0 24px #06b6d4;
+        }
+
+        #cursor-ring {
+            width: 36px;
+            height: 36px;
+            border: 1.5px solid rgba(6, 182, 212, 0.5);
+            transition: transform 0.15s ease-out, width 0.2s ease, height 0.2s ease;
+        }
+
+        .cursor-hover #cursor-ring {
+            width: 56px;
+            height: 56px;
+            border-color: #38bdf8;
+            background-color: rgba(56, 189, 248, 0.1);
+        }
+
+        .cursor-hover #cursor-dot {
+            width: 12px;
+            height: 12px;
+            background-color: #38bdf8;
+        }
+
+        /* Custom Scrollbars */
+        ::-webkit-scrollbar {
+            width: 4px;
+            height: 4px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(15, 23, 42, 0.6);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(6, 182, 212, 0.4);
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(6, 182, 212, 0.8);
+        }
+
+        /* HUD Scanner Glows */
+        .hud-grid-bg {
+            background-size: 40px 40px;
+            background-image: 
+                linear-gradient(to right, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+                linear-gradient(to bottom, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+        }
+
+        .hud-scanline {
+            background: linear-gradient(to bottom, transparent 50%, rgba(6, 182, 212, 0.04) 51%);
+            background-size: 100% 4px;
+        }
+
+        /* Glowing Pulse Animations */
+        @keyframes pulse-glow {
+            0%, 100% { opacity: 0.3; transform: scale(0.98); }
+            50% { opacity: 0.8; transform: scale(1.02); }
+        }
+        .pulse-active {
+            animation: pulse-glow 2s infinite ease-in-out;
+        }
+
+        /* Red Alert Visual FX */
+        .red-alert-flash {
+            animation: red-flash 1s infinite alternate;
+        }
+        @keyframes red-flash {
+            0% { box-shadow: inset 0 0 50px rgba(239, 68, 68, 0.1); }
+            100% { box-shadow: inset 0 0 120px rgba(239, 68, 68, 0.45); }
+        }
+    </style>
+</head>
+<body class="h-screen w-screen relative select-none font-sans hud-grid-bg hud-scanline">
+
+    <!-- Canvas for Three.js 3D Viewport -->
+    <div id="canvas-container" class="absolute inset-0 z-0"></div>
+
+    <!-- Particle Overlay Canvas for Dynamic Mouse Trails -->
+    <canvas id="trail-canvas" class="absolute inset-0 z-1 pointer-events-none"></canvas>
+
+    <!-- Interactive Cursor Elements -->
+    <div id="cursor-dot"></div>
+    <div id="cursor-ring"></div>
+
+    <!-- TOP NAVIGATION BAR -->
+    <header class="absolute top-0 left-0 right-0 z-20 p-4 flex justify-between items-center pointer-events-none">
+        <!-- Logo & Title Section -->
+        <div class="glass-panel px-5 py-3 rounded-2xl flex items-center gap-4 pointer-events-auto shadow-2xl">
+            <div class="relative flex items-center justify-center">
+                <div class="w-10 h-10 rounded-xl bg-cyan-500/20 border border-cyan-400/50 flex items-center justify-center text-cyan-400 font-bold text-xl shadow-[0_0_15px_rgba(6,182,212,0.5)]">
+                    <i class="fa-solid fa-train-subway text-cyan-300"></i>
+                </div>
+                <span class="absolute -top-1 -right-1 flex h-3 w-3">
+                  <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75"></span>
+                  <span class="relative inline-flex rounded-full h-3 w-3 bg-cyan-500"></span>
+                </span>
+            </div>
+            <div>
+                <h1 class="text-lg font-bold tracking-wider text-white flex items-center gap-2">
+                    臺北捷運中央控制中心
+                    <span class="text-xs font-mono px-2 py-0.5 rounded bg-cyan-950/80 border border-cyan-500/40 text-cyan-300">3D DIGITAL TWIN</span>
+                </h1>
+                <p class="text-xs text-gray-400 font-mono tracking-wider">TAIPEI MRT SPATIAL COMMAND CENTER • VER 4.8</p>
+            </div>
+        </div>
+
+        <!-- Center System Status Widget -->
+        <div class="hidden lg:flex items-center gap-6 glass-panel px-6 py-2.5 rounded-2xl pointer-events-auto">
+            <div class="flex items-center gap-3">
+                <div class="text-right">
+                    <p class="text-[10px] text-gray-400 font-mono uppercase">System Health</p>
+                    <p class="text-sm font-bold font-mono text-emerald-400">99.82% OPTIMAL</p>
+                </div>
+                <div class="w-2 h-8 bg-emerald-500/20 rounded-full overflow-hidden p-0.5 border border-emerald-500/30">
+                    <div class="w-full h-full bg-emerald-400 rounded-full animate-pulse"></div>
+                </div>
+            </div>
+
+            <div class="h-8 w-px bg-gray-700/50"></div>
+
+            <div class="flex items-center gap-3">
+                <div class="text-right">
+                    <p class="text-[10px] text-gray-400 font-mono uppercase">Active Trains</p>
+                    <p id="train-count-display" class="text-sm font-bold font-mono text-cyan-300">142 UNITS</p>
+                </div>
+                <i class="fa-solid fa-route text-cyan-400 text-lg"></i>
+            </div>
+
+            <div class="h-8 w-px bg-gray-700/50"></div>
+
+            <div class="flex items-center gap-3">
+                <div class="text-right">
+                    <p class="text-[10px] text-gray-400 font-mono uppercase">Total Network Flow</p>
+                    <p id="network-flow-display" class="text-sm font-bold font-mono text-amber-300">42,850 PAX/H</p>
+                </div>
+                <i class="fa-solid fa-users text-amber-400 text-lg"></i>
+            </div>
+        </div>
+
+        <!-- Right Side Controls & Clock -->
+        <div class="glass-panel px-5 py-2.5 rounded-2xl flex items-center gap-4 pointer-events-auto">
+            <button id="audio-toggle-btn" class="p-2.5 rounded-xl bg-gray-800/60 hover:bg-cyan-900/40 border border-gray-700/50 hover:border-cyan-400/50 text-cyan-400 transition-all cursor-pointer" title="Toggle Spatial Audio Feedback">
+                <i id="audio-icon" class="fa-solid fa-volume-high text-sm"></i>
+            </button>
+            <button id="reset-cam-btn" class="p-2.5 rounded-xl bg-gray-800/60 hover:bg-cyan-900/40 border border-gray-700/50 hover:border-cyan-400/50 text-cyan-400 transition-all cursor-pointer" title="Reset 3D Camera Position">
+                <i class="fa-solid fa-camera-rotate text-sm"></i>
+            </button>
+
+            <div class="h-8 w-px bg-gray-700/50"></div>
+
+            <div class="text-right font-mono">
+                <div id="live-clock" class="text-sm font-bold text-white tracking-widest">11:09:34</div>
+                <div class="text-[10px] text-cyan-400/80">2026-09-24 (THU)</div>
+            </div>
+        </div>
+    </header>
+
+    <!-- LEFT SIDEBAR - LINE SELECTOR & TOPOLOGY CONTROL -->
+    <aside id="left-sidebar" class="absolute left-5 top-24 bottom-6 w-80 z-10 flex flex-col gap-4 pointer-events-none">
+        <!-- Metro Lines Interactive Selector -->
+        <div class="glass-panel p-4 rounded-2xl pointer-events-auto flex flex-col gap-3">
+            <h2 class="text-xs font-bold text-gray-400 uppercase tracking-wider font-mono flex items-center justify-between">
+                <span>MRT Line Topology</span>
+                <span class="text-[10px] px-2 py-0.5 bg-gray-800 text-cyan-400 rounded-full">4 LINES ACTIVE</span>
+            </h2>
+
+            <div class="space-y-2">
+                <!-- Bannan Line -->
+                <button onclick="focusOnLine('bannan')" class="line-btn w-full p-2.5 rounded-xl bg-slate-900/80 border border-slate-700/50 hover:border-[#0070BD] flex items-center justify-between transition-all group text-left cursor-pointer" data-line="bannan">
+                    <div class="flex items-center gap-3">
+                        <div class="w-3 h-8 rounded-full bg-[#0070BD] shadow-[0_0_10px_#0070BD]"></div>
+                        <div>
+                            <p class="text-sm font-bold text-white group-hover:text-cyan-300 transition-colors">BL 板南線 Bannan Line</p>
+                            <p class="text-[10px] text-gray-400 font-mono">23 Stations • 84 Trains</p>
+                        </div>
+                    </div>
+                    <span class="text-xs font-mono text-emerald-400 bg-emerald-950/60 border border-emerald-500/30 px-2 py-0.5 rounded">NORMAL</span>
+                </button>
+
+                <!-- Tamsui-Xinyi Line -->
+                <button onclick="focusOnLine('tamsui')" class="line-btn w-full p-2.5 rounded-xl bg-slate-900/80 border border-slate-700/50 hover:border-[#E3002C] flex items-center justify-between transition-all group text-left cursor-pointer" data-line="tamsui">
+                    <div class="flex items-center gap-3">
+                        <div class="w-3 h-8 rounded-full bg-[#E3002C] shadow-[0_0_10px_#E3002C]"></div>
+                        <div>
+                            <p class="text-sm font-bold text-white group-hover:text-cyan-300 transition-colors">R 淡水信義線 Tamsui-Xinyi</p>
+                            <p class="text-[10px] text-gray-400 font-mono">28 Stations • 76 Trains</p>
+                        </div>
+                    </div>
+                    <span class="text-xs font-mono text-emerald-400 bg-emerald-950/60 border border-emerald-500/30 px-2 py-0.5 rounded">NORMAL</span>
+                </button>
+
+                <!-- Songshan-Xindian Line -->
+                <button onclick="focusOnLine('songshan')" class="line-btn w-full p-2.5 rounded-xl bg-slate-900/80 border border-slate-700/50 hover:border-[#008659] flex items-center justify-between transition-all group text-left cursor-pointer" data-line="songshan">
+                    <div class="flex items-center gap-3">
+                        <div class="w-3 h-8 rounded-full bg-[#008659] shadow-[0_0_10px_#008659]"></div>
+                        <div>
+                            <p class="text-sm font-bold text-white group-hover:text-cyan-300 transition-colors">G 松山新店線 Songshan-Xindian</p>
+                            <p class="text-[10px] text-gray-400 font-mono">20 Stations • 52 Trains</p>
+                        </div>
+                    </div>
+                    <span class="text-xs font-mono text-emerald-400 bg-emerald-950/60 border border-emerald-500/30 px-2 py-0.5 rounded">NORMAL</span>
+                </button>
+
+                <!-- Wenhu Line -->
+                <button onclick="focusOnLine('wenhu')" class="line-btn w-full p-2.5 rounded-xl bg-slate-900/80 border border-slate-700/50 hover:border-[#C48C31] flex items-center justify-between transition-all group text-left cursor-pointer" data-line="wenhu">
+                    <div class="flex items-center gap-3">
+                        <div class="w-3 h-8 rounded-full bg-[#C48C31] shadow-[0_0_10px_#C48C31]"></div>
+                        <div>
+                            <p class="text-sm font-bold text-white group-hover:text-cyan-300 transition-colors">BR 文湖線 Wenhu Line</p>
+                            <p class="text-[10px] text-gray-400 font-mono">24 Stations • 40 Trains</p>
+                        </div>
+                    </div>
+                    <span class="text-xs font-mono text-emerald-400 bg-emerald-950/60 border border-emerald-500/30 px-2 py-0.5 rounded">NORMAL</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Dynamic Selected Station Inspector Card -->
+        <div class="glass-panel p-4 rounded-2xl pointer-events-auto flex-1 flex flex-col justify-between">
+            <div>
+                <div class="flex items-center justify-between border-b border-gray-800 pb-2 mb-3">
+                    <h3 class="text-xs font-bold text-cyan-400 font-mono tracking-wider flex items-center gap-2">
+                        <i class="fa-solid fa-magnifying-glass-location"></i> STATION INSPECTOR
+                    </h3>
+                    <span id="station-code" class="text-xs font-mono bg-cyan-950 text-cyan-300 px-2 py-0.5 rounded border border-cyan-500/30">BL12</span>
+                </div>
+
+                <div id="inspector-content" class="space-y-3">
+                    <div>
+                        <h4 id="station-name-zh" class="text-xl font-bold text-white">臺北車站</h4>
+                        <p id="station-name-en" class="text-xs text-gray-400 font-mono">Taipei Main Station (BL12 / R10)</p>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-2">
+                        <div class="bg-gray-900/60 p-2.5 rounded-xl border border-gray-800">
+                            <p class="text-[10px] text-gray-400">Current Congestion</p>
+                            <p id="station-congestion" class="text-lg font-bold font-mono text-amber-400">88% HIGH</p>
+                            <div class="w-full bg-gray-800 h-1.5 rounded-full mt-1 overflow-hidden">
+                                <div id="station-congestion-bar" class="bg-amber-400 h-full rounded-full" style="width: 88%"></div>
+                            </div>
+                        </div>
+
+                        <div class="bg-gray-900/60 p-2.5 rounded-xl border border-gray-800">
+                            <p class="text-[10px] text-gray-400">Platform Temp</p>
+                            <p id="station-temp" class="text-lg font-bold font-mono text-cyan-300">23.4°C</p>
+                            <p class="text-[10px] text-emerald-400 font-mono mt-1"><i class="fa-solid fa-fan animate-spin"></i> HVAC Normal</p>
+                        </div>
+                    </div>
+
+                    <div class="bg-gray-900/60 p-2.5 rounded-xl border border-gray-800">
+                        <p class="text-[10px] text-gray-400 mb-1">Incoming Trains (Next 3 min)</p>
+                        <div class="space-y-1.5 font-mono text-xs">
+                            <div class="flex justify-between items-center text-gray-300">
+                                <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-[#0070BD]"></span> BL Towards Nangang</span>
+                                <span class="text-cyan-400 font-bold">1 min (Train 204)</span>
+                            </div>
+                            <div class="flex justify-between items-center text-gray-300">
+                                <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-[#E3002C]"></span> R Towards Xiangshan</span>
+                                <span class="text-cyan-400 font-bold">2 min (Train 112)</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="pt-3 border-t border-gray-800/80 flex gap-2">
+                <button onclick="focusStation3D()" class="flex-1 py-2 rounded-xl bg-cyan-600/30 hover:bg-cyan-500/40 border border-cyan-400/40 text-cyan-200 text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-2">
+                    <i class="fa-solid fa-crosshairs"></i> Camera Focus
+                </button>
+                <button onclick="triggerStationCrowdAlert()" class="py-2 px-3 rounded-xl bg-amber-600/30 hover:bg-amber-500/40 border border-amber-400/40 text-amber-200 text-xs font-bold transition-all cursor-pointer" title="Simulate Station Crowding Alert">
+                    <i class="fa-solid fa-triangle-exclamation"></i>
+                </button>
+            </div>
+        </div>
+    </aside>
+
+    <!-- RIGHT SIDEBAR - DISPATCHER COMMANDS & TELEMETRY -->
+    <aside id="right-sidebar" class="absolute right-5 top-24 bottom-6 w-96 z-10 flex flex-col gap-4 pointer-events-none">
+        
+        <!-- Audio Synthesizer Oscilloscope Card -->
+        <div class="glass-panel p-4 rounded-2xl pointer-events-auto">
+            <div class="flex justify-between items-center mb-2">
+                <h3 class="text-xs font-bold text-gray-400 uppercase font-mono tracking-wider flex items-center gap-2">
+                    <i class="fa-solid fa-wave-square text-cyan-400"></i> SPATIAL OSCILLOSCOPE
+                </h3>
+                <span class="text-[10px] font-mono text-cyan-400">44.1 kHz • PCM</span>
+            </div>
+            <div class="h-16 w-full bg-slate-950/90 rounded-xl overflow-hidden border border-cyan-900/40 relative">
+                <canvas id="oscilloscope-canvas" class="w-full h-full"></canvas>
+            </div>
+        </div>
+
+        <!-- Emergency Drill Dispatcher Panel -->
+        <div class="glass-panel p-4 rounded-2xl pointer-events-auto">
+            <h3 class="text-xs font-bold text-amber-400 uppercase font-mono tracking-wider flex items-center gap-2 mb-3">
+                <i class="fa-solid fa-bolt text-amber-400 animate-pulse"></i> DISPATCHER EMERGENCY DRILLS
+            </h3>
+
+            <div class="grid grid-cols-3 gap-2">
+                <button onclick="triggerDrill('signal')" class="p-2.5 rounded-xl bg-red-950/40 hover:bg-red-900/60 border border-red-500/40 hover:border-red-400 text-red-200 text-xs font-bold flex flex-col items-center justify-center gap-1.5 transition-all cursor-pointer text-center group">
+                    <i class="fa-solid fa-signal text-lg text-red-400 group-hover:scale-110 transition-transform"></i>
+                    <span>Signal Fault</span>
+                </button>
+
+                <button onclick="triggerDrill('power')" class="p-2.5 rounded-xl bg-amber-950/40 hover:bg-amber-900/60 border border-amber-500/40 hover:border-amber-400 text-amber-200 text-xs font-bold flex flex-col items-center justify-center gap-1.5 transition-all cursor-pointer text-center group">
+                    <i class="fa-solid fa-plug-circle-exclamation text-lg text-amber-400 group-hover:scale-110 transition-transform"></i>
+                    <span>Power Surge</span>
+                </button>
+
+                <button onclick="triggerDrill('clear')" class="p-2.5 rounded-xl bg-emerald-950/40 hover:bg-emerald-900/60 border border-emerald-500/40 hover:border-emerald-400 text-emerald-200 text-xs font-bold flex flex-col items-center justify-center gap-1.5 transition-all cursor-pointer text-center group">
+                    <i class="fa-solid fa-shield-check text-lg text-emerald-400 group-hover:scale-110 transition-transform"></i>
+                    <span>Clear Alarm</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Real-Time TCC System Log Stream -->
+        <div class="glass-panel p-4 rounded-2xl pointer-events-auto flex-1 flex flex-col overflow-hidden">
+            <div class="flex justify-between items-center mb-3">
+                <h3 class="text-xs font-bold text-gray-400 uppercase font-mono tracking-wider flex items-center gap-2">
+                    <i class="fa-solid fa-terminal text-cyan-400"></i> SYSTEM LOG STREAM
+                </h3>
+                <div class="flex gap-1">
+                    <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                    <span class="text-[10px] font-mono text-gray-400">LIVE</span>
+                </div>
+            </div>
+
+            <div id="log-container" class="flex-1 overflow-y-auto space-y-2 font-mono text-xs pr-1">
+                <!-- Dynamic Logs inserted via JavaScript -->
+            </div>
+        </div>
+    </aside>
+
+    <!-- BOTTOM FLOATING HUD STATUS OVERLAY -->
+    <footer class="absolute bottom-6 left-1/2 -translate-x-1/2 z-10 glass-panel px-6 py-3 rounded-2xl flex items-center gap-8 pointer-events-auto shadow-2xl">
+        <div class="flex items-center gap-3">
+            <i class="fa-solid fa-gauge-high text-cyan-400 text-lg"></i>
+            <div>
+                <p class="text-[10px] text-gray-400 font-mono">AVG FLEET SPEED</p>
+                <p id="avg-speed" class="text-sm font-bold font-mono text-white">64.2 km/h</p>
+            </div>
+        </div>
+
+        <div class="h-6 w-px bg-gray-700/60"></div>
+
+        <div class="flex items-center gap-3">
+            <i class="fa-solid fa-clock-rotate-left text-emerald-400 text-lg"></i>
+            <div>
+                <p class="text-[10px] text-gray-400 font-mono">PUNCTUALITY RATE</p>
+                <p class="text-sm font-bold font-mono text-emerald-400">99.7%</p>
+            </div>
+        </div>
+
+        <div class="h-6 w-px bg-gray-700/60"></div>
+
+        <div class="flex items-center gap-3">
+            <i class="fa-solid fa-bolt text-amber-400 text-lg"></i>
+            <div>
+                <p class="text-[10px] text-gray-400 font-mono">GRID VOLTAGE</p>
+                <p class="text-sm font-bold font-mono text-amber-300">750V DC</p>
+            </div>
+        </div>
+
+        <div class="h-6 w-px bg-gray-700/60"></div>
+
+        <div class="flex items-center gap-3">
+            <i class="fa-solid fa-cubes-stacked text-purple-400 text-lg"></i>
+            <div>
+                <p class="text-[10px] text-gray-400 font-mono">3D RENDER ENGINE</p>
+                <p class="text-sm font-bold font-mono text-purple-300">60 FPS • WebGL2</p>
+            </div>
+        </div>
+    </footer>
+
+    <script>
+        /* ====================================================================
+         * TAIPEI MRT 3D DIGITAL TWIN & INTERACTIVE CONTROLLER
+         * WebGL, Three.js, Web Audio API, Micro-interactions engine
+         * ==================================================================== */
+
+        let scene, camera, renderer, controls;
+        let lineCurves = {};
+        let stationNodes = [];
+        let trainObjects = [];
+        let raycaster, mouse;
+        let ambientLight, pointLight, alertLight;
+        let isEmergencyMode = false;
+
+        // MRT Station Network Coordinates Data (3D Mapping for Taipei MRT Lines)
+        const MRT_DATA = {
+            bannan: {
+                color: 0x0070BD,
+                hex: '#0070BD',
+                name: '板南線 Bannan Line',
+                points: [
+                    new THREE.Vector3(-45, 0, 10),
+                    new THREE.Vector3(-30, 0, 8),
+                    new THREE.Vector3(-15, 0, 5),
+                    new THREE.Vector3(0, 0, 0),    // Taipei Main Station
+                    new THREE.Vector3(15, 0, -2),
+                    new THREE.Vector3(30, 0, -5),
+                    new THREE.Vector3(45, 0, -8)
+                ],
+                stations: [
+                    { nameZh: '板橋', nameEn: 'Banqiao', code: 'BL07', pos: new THREE.Vector3(-30, 0, 8), congestion: 65 },
+                    { nameZh: '西門', nameEn: 'Ximen', code: 'BL11', pos: new THREE.Vector3(-15, 0, 5), congestion: 82 },
+                    { nameZh: '臺北車站', nameEn: 'Taipei Main Station', code: 'BL12', pos: new THREE.Vector3(0, 0, 0), congestion: 92 },
+                    { nameZh: '忠孝復興', nameEn: 'Zhongxiao Fuxing', code: 'BL15', pos: new THREE.Vector3(15, 0, -2), congestion: 88 },
+                    { nameZh: '南港', nameEn: 'Nangang', code: 'BL22', pos: new THREE.Vector3(45, 0, -8), congestion: 54 }
+                ]
+            },
+            tamsui: {
+                color: 0xE3002C,
+                hex: '#E3002C',
+                name: '淡水信義線 Tamsui-Xinyi Line',
+                points: [
+                    new THREE.Vector3(-20, 0, -45),
+                    new THREE.Vector3(-10, 0, -25),
+                    new THREE.Vector3(0, 0, 0),    // Taipei Main Station Intersection
+                    new THREE.Vector3(5, 0, 20),
+                    new THREE.Vector3(10, 0, 40)
+                ],
+                stations: [
+                    { nameZh: '淡水', nameEn: 'Tamsui', code: 'R28', pos: new THREE.Vector3(-20, 0, -45), congestion: 40 },
+                    { nameZh: '圓山', nameEn: 'Yuanshan', code: 'R14', pos: new THREE.Vector3(-10, 0, -25), congestion: 70 },
+                    { nameZh: '臺北車站', nameEn: 'Taipei Main Station', code: 'R10', pos: new THREE.Vector3(0, 0, 0), congestion: 92 },
+                    { nameZh: '大安', nameEn: 'Daan', code: 'R05', pos: new THREE.Vector3(5, 0, 20), congestion: 78 },
+                    { nameZh: '象山', nameEn: 'Xiangshan', code: 'R02', pos: new THREE.Vector3(10, 0, 40), congestion: 48 }
+                ]
+            },
+            songshan: {
+                color: 0x008659,
+                hex: '#008659',
+                name: '松山新店線 Songshan-Xindian Line',
+                points: [
+                    new THREE.Vector3(35, 2, -30),
+                    new THREE.Vector3(15, 2, -15),
+                    new THREE.Vector3(-15, 2, 5),   // Ximen Intersection
+                    new THREE.Vector3(-25, 2, 25),
+                    new THREE.Vector3(-35, 2, 40)
+                ],
+                stations: [
+                    { nameZh: '松山', nameEn: 'Songshan', code: 'G19', pos: new THREE.Vector3(35, 2, -30), congestion: 60 },
+                    { nameZh: '南京復興', nameEn: 'Nanjing Fuxing', code: 'G16', pos: new THREE.Vector3(15, 2, -15), congestion: 75 },
+                    { nameZh: '西門', nameEn: 'Ximen', code: 'G12', pos: new THREE.Vector3(-15, 2, 5), congestion: 82 },
+                    { nameZh: '公館', nameEn: 'Gongguan', code: 'G07', pos: new THREE.Vector3(-25, 2, 25), congestion: 68 },
+                    { nameZh: '新店', nameEn: 'Xindian', code: 'G01', pos: new THREE.Vector3(-35, 2, 40), congestion: 35 }
+                ]
+            },
+            wenhu: {
+                color: 0xC48C31,
+                hex: '#C48C31',
+                name: '文湖線 Wenhu Line',
+                points: [
+                    new THREE.Vector3(40, 6, -40),
+                    new THREE.Vector3(15, 6, -15), // Nanjing Fuxing
+                    new THREE.Vector3(15, 6, -2),  // Zhongxiao Fuxing
+                    new THREE.Vector3(5, 6, 20),   // Daan
+                    new THREE.Vector3(25, 6, 45)
+                ],
+                stations: [
+                    { nameZh: '南港展覽館', nameEn: 'Nangang Software Park', code: 'BR24', pos: new THREE.Vector3(40, 6, -40), congestion: 72 },
+                    { nameZh: '忠孝復興', nameEn: 'Zhongxiao Fuxing', code: 'BR10', pos: new THREE.Vector3(15, 6, -2), congestion: 88 },
+                    { nameZh: '動物園', nameEn: 'Taipei Zoo', code: 'BR01', pos: new THREE.Vector3(25, 6, 45), congestion: 30 }
+                ]
+            }
+        };
+
+        function init3DScene() {
+            const container = document.getElementById('canvas-container');
+            
+            // Scene
+            scene = new THREE.Scene();
+            scene.fog = new THREE.FogExp2(0x030712, 0.012);
+
+            // Camera
+            camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(0, 65, 85);
+
+            // Renderer
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            renderer.shadowMap.enabled = true;
+            container.appendChild(renderer.domElement);
+
+            // Orbit Controls
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+            controls.maxPolarAngle = Math.PI / 2.1; // Don't go below floor
+            controls.minDistance = 20;
+            controls.maxDistance = 180;
+
+            // Lighting Setup
+            ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+            scene.add(ambientLight);
+
+            pointLight = new THREE.PointLight(0x06b6d4, 2, 120);
+            pointLight.position.set(0, 40, 0);
+            scene.add(pointLight);
+
+            // Emergency Red Light (Initially off)
+            alertLight = new THREE.PointLight(0xef4444, 0, 150);
+            alertLight.position.set(0, 30, 0);
+            scene.add(alertLight);
+
+            // Holographic Floor Grid
+            const gridHelper = new THREE.GridHelper(160, 40, 0x06b6d4, 0x1e293b);
+            gridHelper.position.y = -2;
+            scene.add(gridHelper);
+
+            // Build 3D MRT Network
+            buildMRTNetwork();
+
+            // Raycasting setup
+            raycaster = new THREE.Raycaster();
+            mouse = new THREE.Vector2();
+
+            window.addEventListener('resize', onWindowResize);
+            window.addEventListener('mousemove', onRaycastMouseMove);
+            window.addEventListener('click', onRaycastClick);
+        }
+
+        function buildMRTNetwork() {
+            Object.keys(MRT_DATA).forEach(lineKey => {
+                const line = MRT_DATA[lineKey];
+                
+                // Create Bezier Curve for track
+                const curve = new THREE.CatmullRomCurve3(line.points);
+                lineCurves[lineKey] = curve;
+
+                // Render Tube Geometry for Track
+                const tubeGeo = new THREE.TubeGeometry(curve, 64, 0.4, 8, false);
+                const tubeMat = new THREE.MeshStandardMaterial({
+                    color: line.color,
+                    emissive: line.color,
+                    emissiveIntensity: 0.6,
+                    roughness: 0.2,
+                    metalness: 0.8
+                });
+                const trackMesh = new THREE.Mesh(tubeGeo, tubeMat);
+                scene.add(trackMesh);
+
+                // Render Station Pillars & Nodes
+                line.stations.forEach(st => {
+                    // Station Cylinder Base
+                    const stGeo = new THREE.CylinderGeometry(1.5, 1.8, 1, 16);
+                    const stMat = new THREE.MeshStandardMaterial({
+                        color: 0xffffff,
+                        emissive: line.color,
+                        emissiveIntensity: 0.8,
+                        metalness: 0.9
+                    });
+                    const stationMesh = new THREE.Mesh(stGeo, stMat);
+                    stationMesh.position.copy(st.pos);
+                    stationMesh.userData = { ...st, lineKey };
+                    scene.add(stationMesh);
+                    stationNodes.push(stationMesh);
+
+                    // Vertical Light Beacon Pillar
+                    const beaconGeo = new THREE.CylinderGeometry(0.1, 0.1, 12, 8);
+                    const beaconMat = new THREE.MeshBasicMaterial({
+                        color: line.color,
+                        transparent: true,
+                        opacity: 0.4
+                    });
+                    const beacon = new THREE.Mesh(beaconGeo, beaconMat);
+                    beacon.position.set(st.pos.x, st.pos.y + 6, st.pos.z);
+                    scene.add(beacon);
+
+                    // Congestion Cone Overlay
+                    const coneGeo = new THREE.ConeGeometry(st.congestion / 30, st.congestion / 15, 12);
+                    const coneMat = new THREE.MeshBasicMaterial({
+                        color: st.congestion > 80 ? 0xef4444 : 0xf59e0b,
+                        wireframe: true,
+                        transparent: true,
+                        opacity: 0.5
+                    });
+                    const cone = new THREE.Mesh(coneGeo, coneMat);
+                    cone.position.set(st.pos.x, st.pos.y + (st.congestion / 30), st.pos.z);
+                    scene.add(cone);
+                });
+
+                // Spawn Moving 3D Train Models along Curve
+                for (let i = 0; i < 3; i++) {
+                    const trainGroup = new THREE.Group();
+
+                    // Train Body
+                    const bodyGeo = new THREE.BoxGeometry(2.5, 1.2, 1.2);
+                    const bodyMat = new THREE.MeshStandardMaterial({
+                        color: 0x1e293b,
+                        metalness: 0.8,
+                        roughness: 0.2
+                    });
+                    const body = new THREE.Mesh(bodyGeo, bodyMat);
+                    trainGroup.add(body);
+
+                    // Train Headlight Glow
+                    const lightGeo = new THREE.SphereGeometry(0.3, 8, 8);
+                    const lightMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8 });
+                    const light = new THREE.Mesh(lightGeo, lightMat);
+                    light.position.set(1.3, 0, 0);
+                    trainGroup.add(light);
+
+                    scene.add(trainGroup);
+
+                    trainObjects.push({
+                        mesh: trainGroup,
+                        curve: curve,
+                        progress: (i * 0.33) + Math.random() * 0.1,
+                        speed: 0.0008 + Math.random() * 0.0004,
+                        lineKey: lineKey
+                    });
+                }
+            });
+        }
+
+        const canvasTrail = document.getElementById('trail-canvas');
+        const ctxTrail = canvasTrail.getContext('2d');
+        let particles = [];
+
+        function initTrailCanvas() {
+            canvasTrail.width = window.innerWidth;
+            canvasTrail.height = window.innerHeight;
+        }
+
+        class Particle {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+                this.size = Math.random() * 3 + 1;
+                this.speedX = (Math.random() - 0.5) * 1.5;
+                this.speedY = (Math.random() - 0.5) * 1.5;
+                this.color = '#06b6d4';
+                this.life = 1;
+            }
+            update() {
+                this.x += this.speedX;
+                this.y += this.speedY;
+                this.life -= 0.025;
+            }
+            draw() {
+                ctxTrail.fillStyle = `rgba(6, 182, 212, ${this.life})`;
+                ctxTrail.beginPath();
+                ctxTrail.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                ctxTrail.fill();
+            }
+        }
+
+        function handleParticles() {
+            ctxTrail.clearRect(0, 0, canvasTrail.width, canvasTrail.height);
+            for (let i = 0; i < particles.length; i++) {
+                particles[i].update();
+                particles[i].draw();
+                if (particles[i].life <= 0) {
+                    particles.splice(i, 1);
+                    i--;
+                }
+            }
+        }
+
+        // Custom Cursor & Dynamic 3D Panel Tilt Listener
+        const cursorDot = document.getElementById('cursor-dot');
+        const cursorRing = document.getElementById('cursor-ring');
+
+        window.addEventListener('mousemove', (e) => {
+            const x = e.clientX;
+            const y = e.clientY;
+
+            // Cursor Positioning
+            cursorDot.style.left = `${x}px`;
+            cursorDot.style.top = `${y}px`;
+
+            gsap.to(cursorRing, {
+                x: x,
+                y: y,
+                duration: 0.15,
+                ease: 'power2.out'
+            });
+
+            // Emit trail particles
+            for (let i = 0; i < 2; i++) {
+                particles.push(new Particle(x, y));
+            }
+
+            // Interactive 3D Perspective Tilt for Glass Panels
+            const panels = document.querySelectorAll('.glass-panel');
+            panels.forEach(panel => {
+                const rect = panel.getBoundingClientRect();
+                const panelCenterX = rect.left + rect.width / 2;
+                const panelCenterY = rect.top + rect.height / 2;
+
+                const deltaX = (x - panelCenterX) / (rect.width / 2);
+                const deltaY = (y - panelCenterY) / (rect.height / 2);
+
+                if (Math.abs(x - panelCenterX) < rect.width && Math.abs(y - panelCenterY) < rect.height) {
+                    gsap.to(panel, {
+                        rotateX: -deltaY * 5,
+                        rotateY: deltaX * 5,
+                        duration: 0.3,
+                        ease: 'power1.out'
+                    });
+                } else {
+                    gsap.to(panel, {
+                        rotateX: 0,
+                        rotateY: 0,
+                        duration: 0.5,
+                        ease: 'power1.out'
+                    });
+                }
+            });
+        });
+
+        let audioCtx, osc, gainNode, analyser;
+        let isAudioMuted = false;
+
+        function initAudio() {
+            if (audioCtx) return;
+            const AudioContext = window.AudioContext || window.webkitAudioContext;
+            audioCtx = new AudioContext();
+
+            analyser = audioCtx.createAnalyser();
+            analyser.fftSize = 128;
+            analyser.connect(audioCtx.destination);
+        }
+
+        function playSpatialBeep(freq = 440, duration = 0.1, type = 'sine') {
+            if (isAudioMuted) return;
+            initAudio();
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+
+            const oscNode = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+
+            oscNode.type = type;
+            oscNode.frequency.setValueAtTime(freq, audioCtx.currentTime);
+
+            gain.gain.setValueAtTime(0.08, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
+
+            oscNode.connect(gain);
+            gain.connect(analyser);
+
+            oscNode.start();
+            oscNode.stop(audioCtx.currentTime + duration);
+        }
+
+        // Render Oscilloscope Visualizer
+        const oscCanvas = document.getElementById('oscilloscope-canvas');
+        const oscCtx = oscCanvas.getContext('2d');
+
+        function drawOscilloscope() {
+            requestAnimationFrame(drawOscilloscope);
+            oscCanvas.width = oscCanvas.clientWidth;
+            oscCanvas.height = oscCanvas.clientHeight;
+
+            oscCtx.fillStyle = 'rgba(3, 7, 18, 0.8)';
+            oscCtx.fillRect(0, 0, oscCanvas.width, oscCanvas.height);
+
+            if (!analyser) {
+                // Static Line
+                oscCtx.strokeStyle = 'rgba(6, 182, 212, 0.3)';
+                oscCtx.beginPath();
+                oscCtx.moveTo(0, oscCanvas.height / 2);
+                oscCtx.lineTo(oscCanvas.width, oscCanvas.height / 2);
+                oscCtx.stroke();
+                return;
+            }
+
+            const bufferLength = analyser.frequencyBinCount;
+            const dataArray = new Uint8Array(bufferLength);
+            analyser.getByteTimeDomainData(dataArray);
+
+            oscCtx.lineWidth = 2;
+            oscCtx.strokeStyle = isEmergencyMode ? '#ef4444' : '#06b6d4';
+            oscCtx.beginPath();
+
+            const sliceWidth = oscCanvas.width * 1.0 / bufferLength;
+            let x = 0;
+
+            for (let i = 0; i < bufferLength; i++) {
+                const v = dataArray[i] / 128.0;
+                const y = v * oscCanvas.height / 2;
+
+                if (i === 0) {
+                    oscCtx.moveTo(x, y);
+                } else {
+                    oscCtx.lineTo(x, y);
+                }
+                x += sliceWidth;
+            }
+
+            oscCtx.lineTo(oscCanvas.width, oscCanvas.height / 2);
+            oscCtx.stroke();
+        }
+
+        // Audio Toggle
+        document.getElementById('audio-toggle-btn').addEventListener('click', () => {
+            isAudioMuted = !isAudioMuted;
+            const icon = document.getElementById('audio-icon');
+            if (isAudioMuted) {
+                icon.className = 'fa-solid fa-volume-xmark text-red-400';
+            } else {
+                icon.className = 'fa-solid fa-volume-high text-cyan-400';
+                playSpatialBeep(880, 0.15);
+            }
+        });
+
+        function onRaycastMouseMove(event) {
+            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+
+            raycaster.setFromCamera(mouse, camera);
+            const intersects = raycaster.intersectObjects(stationNodes);
+
+            if (intersects.length > 0) {
+                document.body.classList.add('cursor-hover');
+                const hitStation = intersects[0].object;
+                hitStation.scale.set(1.3, 1.3, 1.3);
+            } else {
+                document.body.classList.remove('cursor-hover');
+                stationNodes.forEach(node => node.scale.set(1, 1, 1));
+            }
+        }
+
+        function onRaycastClick(event) {
+            raycaster.setFromCamera(mouse, camera);
+            const intersects = raycaster.intersectObjects(stationNodes);
+
+            if (intersects.length > 0) {
+                const stData = intersects[0].object.userData;
+                updateInspector(stData);
+                playSpatialBeep(1200, 0.2, 'triangle');
+
+                // Camera smooth shift to target station
+                gsap.to(camera.position, {
+                    x: stData.pos.x + 15,
+                    y: stData.pos.y + 20,
+                    z: stData.pos.z + 25,
+                    duration: 1.5,
+                    ease: 'power2.inOut'
+                });
+                gsap.to(controls.target, {
+                    x: stData.pos.x,
+                    y: stData.pos.y,
+                    z: stData.pos.z,
+                    duration: 1.5,
+                    ease: 'power2.inOut'
+                });
+            }
+        }
+
+        function updateInspector(data) {
+            document.getElementById('station-name-zh').innerText = data.nameZh;
+            document.getElementById('station-name-en').innerText = `${data.nameEn} (${data.code})`;
+            document.getElementById('station-code').innerText = data.code;
+            document.getElementById('station-congestion').innerText = `${data.congestion}% ${data.congestion > 80 ? 'HIGH' : 'NORMAL'}`;
+            document.getElementById('station-congestion-bar').style.width = `${data.congestion}%`;
+
+            addSystemLog(`[INSPECT] Station query: ${data.nameZh} (${data.code})`, 'info');
+        }
+
+        function focusOnLine(lineKey) {
+            const line = MRT_DATA[lineKey];
+            if (!line) return;
+
+            playSpatialBeep(600, 0.15);
+            addSystemLog(`[TOPOLOGY] Focused on ${line.name}`, 'info');
+
+            // Zoom camera to center of line curve
+            const midPoint = line.points[Math.floor(line.points.length / 2)];
+            gsap.to(camera.position, {
+                x: midPoint.x,
+                y: midPoint.y + 45,
+                z: midPoint.z + 55,
+                duration: 1.8,
+                ease: 'power2.inOut'
+            });
+            gsap.to(controls.target, {
+                x: midPoint.x,
+                y: midPoint.y,
+                z: midPoint.z,
+                duration: 1.8,
+                ease: 'power2.inOut'
+            });
+        }
+
+        document.getElementById('reset-cam-btn').addEventListener('click', () => {
+            playSpatialBeep(520, 0.1);
+            gsap.to(camera.position, { x: 0, y: 65, z: 85, duration: 1.5 });
+            gsap.to(controls.target, { x: 0, y: 0, z: 0, duration: 1.5 });
+            addSystemLog(`[CAMERA] Reset to default overview matrix`, 'sys');
+        });
+
+        function triggerDrill(type) {
+            if (type === 'signal') {
+                isEmergencyMode = true;
+                alertLight.intensity = 3.5;
+                document.body.classList.add('red-alert-flash');
+                playSpatialBeep(200, 0.6, 'sawtooth');
+                addSystemLog(`[ALERT] Signal interleaving fault at Taipei Main Station!`, 'danger');
+            } else if (type === 'power') {
+                isEmergencyMode = true;
+                alertLight.intensity = 2.5;
+                document.body.classList.add('red-alert-flash');
+                playSpatialBeep(300, 0.5, 'square');
+                addSystemLog(`[WARNING] Power line grid voltage surge detected (780V)`, 'warning');
+            } else if (type === 'clear') {
+                isEmergencyMode = false;
+                alertLight.intensity = 0;
+                document.body.classList.remove('red-alert-flash');
+                playSpatialBeep(880, 0.2);
+                addSystemLog(`[SYSTEM] Emergency drill cleared. Normal operations resumed.`, 'success');
+            }
+        }
+
+        function triggerStationCrowdAlert() {
+            playSpatialBeep(450, 0.3, 'sawtooth');
+            addSystemLog(`[CROWD] Platform capacity threshold reached at selected station!`, 'warning');
+        }
+
+        // Live Operational System Log Generator
+        function addSystemLog(msg, type = 'info') {
+            const container = document.getElementById('log-container');
+            const time = new Date().toLocaleTimeString('en-US', { hour12: false });
+
+            let colorClass = 'text-gray-300';
+            if (type === 'danger') colorClass = 'text-red-400 font-bold';
+            if (type === 'warning') colorClass = 'text-amber-300';
+            if (type === 'success') colorClass = 'text-emerald-400';
+            if (type === 'sys') colorClass = 'text-cyan-400';
+
+            const logEntry = document.createElement('div');
+            logEntry.className = `p-1.5 rounded bg-gray-900/50 border-l-2 ${type === 'danger' ? 'border-red-500' : 'border-cyan-500'} ${colorClass} text-[11px] leading-tight`;
+            logEntry.innerHTML = `<span class="opacity-50 text-[10px] mr-1">[${time}]</span> ${msg}`;
+
+            container.prepend(logEntry);
+
+            // Limit logs to 25 items
+            if (container.children.length > 25) {
+                container.removeChild(container.lastChild);
+            }
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            // Update Orbit Controls
+            controls.update();
+
+            // Animate 3D Trains along Bezier Curves
+            trainObjects.forEach(train => {
+                train.progress += train.speed;
+                if (train.progress > 1) train.progress = 0;
+
+                const point = train.curve.getPointAt(train.progress);
+                const tangent = train.curve.getTangentAt(train.progress);
+
+                train.mesh.position.copy(point);
+                train.mesh.lookAt(point.clone().add(tangent));
+            });
+
+            // Pulse point light
+            if (!isEmergencyMode) {
+                pointLight.intensity = 1.8 + Math.sin(Date.now() * 0.003) * 0.4;
+            }
+
+            // Render 3D Scene
+            renderer.render(scene, camera);
+
+            // Render Particle Canvas
+            handleParticles();
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            initTrailCanvas();
+        }
+
+        // Real-Time Clock & Telemetry Tick
+        setInterval(() => {
+            const now = new Date();
+            document.getElementById('live-clock').innerText = now.toLocaleTimeString('en-US', { hour12: false });
+
+            // Random micro-fluctuation for realistic HUD stats
+            const flow = 42000 + Math.floor(Math.random() * 1500);
+            document.getElementById('network-flow-display').innerText = `${flow.toLocaleString()} PAX/H`;
+
+            const speed = (63.5 + Math.random() * 1.8).toFixed(1);
+            document.getElementById('avg-speed').innerText = `${speed} km/h`;
+        }, 1000);
+
+        // INITIALIZATION ON WINDOW LOAD
+        window.onload = function() {
+            init3DScene();
+            initTrailCanvas();
+            drawOscilloscope();
+            animate();
+
+            // Initial Logs
+            addSystemLog('System initialized: Taipei MRT 3D Command & Control', 'sys');
+            addSystemLog('Connected to 3D Digital Twin Spatial Server node #04', 'info');
+            addSystemLog('WebGL2 Renderer and Audio Oscilloscope operational', 'success');
+        };
+    </script>
+</body>
+</html>
